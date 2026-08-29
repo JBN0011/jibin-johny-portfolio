@@ -3,8 +3,6 @@ import { usePortfolio } from '../context/PortfolioContext';
 import gsap from 'gsap';
 import { Mail, Check, Copy, Send, ArrowUpRight, Github, Linkedin, Instagram, Code } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
 
 export const ContactFooter: React.FC = () => {
   const { config } = usePortfolio();
@@ -66,19 +64,7 @@ export const ContactFooter: React.FC = () => {
     setErrorMessage('');
 
     try {
-      // 1. Save to Cloud Firestore
-      try {
-        await addDoc(collection(db, 'messages'), {
-          name: formData.name,
-          email: formData.email,
-          message: formData.message,
-          createdAt: new Date().toISOString(),
-        });
-      } catch (firestoreErr) {
-        console.warn('Firestore message save error:', firestoreErr);
-      }
-
-      // 2. Direct delivery endpoint to the portfolio owner's email
+      // Direct delivery endpoint to the portfolio owner's email
       const endpoint =
         config.contactFormEndpoint && config.contactFormEndpoint.trim() !== ''
           ? config.contactFormEndpoint
