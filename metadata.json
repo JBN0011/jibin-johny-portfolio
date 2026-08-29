@@ -1,0 +1,6 @@
+{
+  "name": "Jibin Johny Portfolio",
+  "description": "Minimalist monochrome dark portfolio for Jibin Johny with cinematic hero, GSAP & Framer Motion interactions, Bento projects gallery, writings, and content admin dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
