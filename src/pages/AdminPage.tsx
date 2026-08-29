@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { usePortfolio } from '../context/PortfolioContext';
 import { Project, JournalEntry } from '../types';
+import { sha256, DEFAULT_ADMIN_PASSCODE_HASH } from '../utils/crypto';
 import {
   Shield,
   Lock,
@@ -17,11 +18,11 @@ import {
   Check,
   Upload,
   Eye,
+  EyeOff,
+  KeyRound,
   RefreshCw,
   ExternalLink,
   BarChart3,
-  Cloud,
-  CloudCheck,
 } from 'lucide-react';
 
 type Tab = 'projects' | 'journals' | 'metrics' | 'resume' | 'settings';
@@ -45,7 +46,6 @@ export const AdminPage: React.FC = () => {
     resetToDefaults,
     isAdminAuthenticated,
     setIsAdminAuthenticated,
-    isCloudSynced,
   } = usePortfolio();
 
   const [passcode, setPasscode] = useState('');
@@ -96,6 +96,16 @@ export const AdminPage: React.FC = () => {
 
   // Profile Photo State
   const [profilePhotoInput, setProfilePhotoInput] = useState(config.profilePhoto || '');
+
+  // Passcode Management State
+  const [currentPasscodeInput, setCurrentPasscodeInput] = useState('');
+  const [newPasscodeInput, setNewPasscodeInput] = useState('');
+  const [confirmPasscodeInput, setConfirmPasscodeInput] = useState('');
+  const [showPasscodeText, setShowPasscodeText] = useState(false);
+  const [passcodeChangeStatus, setPasscodeChangeStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
 
   // Rotating Roles State
   const [rolesInput, setRolesInput] = useState(config.roles ? config.roles.join(', ') : '');
@@ -183,14 +193,78 @@ export const AdminPage: React.FC = () => {
     }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (passcode === config.adminPasscode || passcode === 'admin123') {
+    setAuthError('');
+    if (!passcode.trim()) {
+      setAuthError('Please enter a passcode.');
+      return;
+    }
+
+    const inputHash = await sha256(passcode);
+    const activeHash =
+      config.adminPasscodeHash ||
+      (config.adminPasscode ? await sha256(config.adminPasscode) : DEFAULT_ADMIN_PASSCODE_HASH);
+
+    if (inputHash === activeHash) {
       setIsAdminAuthenticated(true);
       setAuthError('');
     } else {
-      setAuthError('Invalid passcode. Default is "admin123"');
+      setAuthError('Invalid passcode. Access denied.');
     }
+  };
+
+  const handleChangePasscode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasscodeChangeStatus(null);
+
+    if (!currentPasscodeInput) {
+      setPasscodeChangeStatus({ type: 'error', message: 'Please enter your current passcode.' });
+      return;
+    }
+
+    if (!newPasscodeInput) {
+      setPasscodeChangeStatus({ type: 'error', message: 'Please enter a new passcode.' });
+      return;
+    }
+
+    if (newPasscodeInput.length < 6) {
+      setPasscodeChangeStatus({
+        type: 'error',
+        message: 'New passcode must be at least 6 characters.',
+      });
+      return;
+    }
+
+    if (newPasscodeInput !== confirmPasscodeInput) {
+      setPasscodeChangeStatus({ type: 'error', message: 'New passcodes do not match.' });
+      return;
+    }
+
+    const currentHash = await sha256(currentPasscodeInput);
+    const activeHash =
+      config.adminPasscodeHash ||
+      (config.adminPasscode ? await sha256(config.adminPasscode) : DEFAULT_ADMIN_PASSCODE_HASH);
+
+    if (currentHash !== activeHash) {
+      setPasscodeChangeStatus({ type: 'error', message: 'Current passcode is incorrect.' });
+      return;
+    }
+
+    const newHash = await sha256(newPasscodeInput);
+    updateConfig({
+      adminPasscodeHash: newHash,
+      adminPasscode: undefined,
+    });
+
+    setCurrentPasscodeInput('');
+    setNewPasscodeInput('');
+    setConfirmPasscodeInput('');
+    setPasscodeChangeStatus({
+      type: 'success',
+      message: 'Admin passcode updated and securely encrypted!',
+    });
+    showNotification('Passcode updated successfully!');
   };
 
   // --- Projects Handlers ---
@@ -387,15 +461,9 @@ export const AdminPage: React.FC = () => {
               <h1 className="text-2xl font-display italic text-white leading-none">
                 Content Management
               </h1>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs font-mono text-[hsl(var(--muted))]">
-                  Logged in as Admin • {config.name}
-                </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Firestore Cloud Live</span>
-                </span>
-              </div>
+              <span className="text-xs font-mono text-[hsl(var(--muted))]">
+                Logged in as Admin • {config.name}
+              </span>
             </div>
           </div>
 
@@ -1098,16 +1166,94 @@ export const AdminPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-mono uppercase tracking-wider text-[hsl(var(--muted))] mb-1.5">
-                      Admin Passcode
-                    </label>
-                    <input
-                      type="text"
-                      value={config.adminPasscode}
-                      onChange={(e) => updateConfig({ adminPasscode: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-xl bg-black border border-[hsl(var(--stroke))] text-white text-xs font-mono"
-                    />
+                  {/* --- SECURE ADMIN PASSCODE MANAGEMENT --- */}
+                  <div className="p-5 rounded-2xl bg-black/60 border border-[hsl(var(--stroke))] space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white">
+                          <KeyRound className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-medium text-white">Admin Passcode & Security</h4>
+                          <p className="text-[11px] font-mono text-[hsl(var(--muted))]">
+                            Stored via cryptographic SHA-256 one-way hash (No plain-text exposure)
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowPasscodeText(!showPasscodeText)}
+                        className="p-1.5 rounded-lg border border-white/10 text-[hsl(var(--muted))] hover:text-white transition-colors"
+                        title={showPasscodeText ? 'Hide Passcodes' : 'Show Passcodes'}
+                      >
+                        {showPasscodeText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleChangePasscode} className="space-y-3 pt-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-mono uppercase tracking-wider text-[hsl(var(--muted))] mb-1">
+                            Current Passcode
+                          </label>
+                          <input
+                            type={showPasscodeText ? 'text' : 'password'}
+                            value={currentPasscodeInput}
+                            onChange={(e) => setCurrentPasscodeInput(e.target.value)}
+                            placeholder="Current passcode"
+                            className="w-full px-3.5 py-2 rounded-xl bg-black border border-[hsl(var(--stroke))] text-white text-xs font-mono placeholder:text-white/20 focus:border-white focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-mono uppercase tracking-wider text-[hsl(var(--muted))] mb-1">
+                            New Passcode (min 6 chars)
+                          </label>
+                          <input
+                            type={showPasscodeText ? 'text' : 'password'}
+                            value={newPasscodeInput}
+                            onChange={(e) => setNewPasscodeInput(e.target.value)}
+                            placeholder="New secure passcode"
+                            className="w-full px-3.5 py-2 rounded-xl bg-black border border-[hsl(var(--stroke))] text-white text-xs font-mono placeholder:text-white/20 focus:border-white focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-mono uppercase tracking-wider text-[hsl(var(--muted))] mb-1">
+                            Confirm New Passcode
+                          </label>
+                          <input
+                            type={showPasscodeText ? 'text' : 'password'}
+                            value={confirmPasscodeInput}
+                            onChange={(e) => setConfirmPasscodeInput(e.target.value)}
+                            placeholder="Confirm new passcode"
+                            className="w-full px-3.5 py-2 rounded-xl bg-black border border-[hsl(var(--stroke))] text-white text-xs font-mono placeholder:text-white/20 focus:border-white focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {passcodeChangeStatus && (
+                        <div
+                          className={`p-3 rounded-xl text-xs font-mono ${
+                            passcodeChangeStatus.type === 'success'
+                              ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
+                              : 'bg-red-500/10 border border-red-500/30 text-red-300'
+                          }`}
+                        >
+                          {passcodeChangeStatus.message}
+                        </div>
+                      )}
+
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="submit"
+                          className="px-4 py-2 rounded-full bg-white text-black font-medium text-xs font-mono hover:bg-white/90 transition-all flex items-center gap-1.5"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Update Passcode</span>
+                        </button>
+                      </div>
+                    </form>
                   </div>
 
                   <div className="pt-6 border-t border-[hsl(var(--stroke))] flex items-center justify-between">

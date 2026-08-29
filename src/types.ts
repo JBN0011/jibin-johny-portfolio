@@ -49,6 +49,7 @@ export interface PortfolioConfig {
     leetcode: string;
     github: string;
   };
-  adminPasscode: string;
+  adminPasscodeHash: string;
+  adminPasscode?: string;
   contactFormEndpoint?: string;
 }

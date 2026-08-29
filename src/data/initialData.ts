@@ -1,4 +1,5 @@
 import { Project, JournalEntry, StatItem, PortfolioConfig } from '../types';
+import { DEFAULT_ADMIN_PASSCODE_HASH } from '../utils/crypto';
 
 export const INITIAL_CONFIG: PortfolioConfig = {
   name: 'Jibin Johny',
@@ -17,7 +18,7 @@ export const INITIAL_CONFIG: PortfolioConfig = {
     leetcode: 'https://leetcode.com/u/jibinpjohny000/',
     github: 'https://github.com/JBN0011',
   },
-  adminPasscode: 'admin123',
+  adminPasscodeHash: DEFAULT_ADMIN_PASSCODE_HASH,
 };
 
 export const INITIAL_PROJECTS: Project[] = [
