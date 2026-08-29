@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePortfolio } from '../context/PortfolioContext';
+import { db } from '../lib/firebase';
+import { collection, addDoc } from 'firebase/firestore';
 import gsap from 'gsap';
 import { Mail, Check, Copy, Send, ArrowUpRight, Github, Linkedin, Instagram, Code } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -64,7 +66,19 @@ export const ContactFooter: React.FC = () => {
     setErrorMessage('');
 
     try {
-      // Direct delivery endpoint to the portfolio owner's email
+      // 1. Store in Cloud Firestore
+      try {
+        await addDoc(collection(db, 'messages'), {
+          name: formData.name,
+          email: formData.email,
+          message: formData.message,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (firestoreErr) {
+        console.warn('Firestore message save error:', firestoreErr);
+      }
+
+      // 2. Direct delivery endpoint to the portfolio owner's email
       const endpoint =
         config.contactFormEndpoint && config.contactFormEndpoint.trim() !== ''
           ? config.contactFormEndpoint
@@ -96,7 +110,7 @@ export const ContactFooter: React.FC = () => {
         setSubmitted(true);
       }
     } catch {
-      // If network fails (e.g. adblocker), open Gmail compose
+      // If network fails (e.g. adblocker), mark as submitted
       setSubmitted(true);
     } finally {
       setIsSubmitting(false);

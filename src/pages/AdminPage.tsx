@@ -46,6 +46,7 @@ export const AdminPage: React.FC = () => {
     resetToDefaults,
     isAdminAuthenticated,
     setIsAdminAuthenticated,
+    isCloudSynced,
   } = usePortfolio();
 
   const [passcode, setPasscode] = useState('');
@@ -461,9 +462,15 @@ export const AdminPage: React.FC = () => {
               <h1 className="text-2xl font-display italic text-white leading-none">
                 Content Management
               </h1>
-              <span className="text-xs font-mono text-[hsl(var(--muted))]">
-                Logged in as Admin • {config.name}
-              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs font-mono text-[hsl(var(--muted))]">
+                  Logged in as Admin • {config.name}
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 inline-flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  {isCloudSynced ? 'Firestore Cloud Live' : 'Firestore Connecting'}
+                </span>
+              </div>
             </div>
           </div>
 

@@ -1,6 +1,15 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Project, JournalEntry, StatItem, PortfolioConfig } from '../types';
 import { INITIAL_CONFIG, INITIAL_PROJECTS, INITIAL_JOURNALS, INITIAL_STATS } from '../data/initialData';
+import { db } from '../lib/firebase';
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+} from 'firebase/firestore';
 
 interface PortfolioContextType {
   config: PortfolioConfig;
@@ -8,20 +17,21 @@ interface PortfolioContextType {
   journals: JournalEntry[];
   stats: StatItem[];
   // Actions
-  updateConfig: (config: Partial<PortfolioConfig>) => void;
-  addProject: (project: Omit<Project, 'id'>) => void;
-  updateProject: (id: string, project: Partial<Project>) => void;
-  deleteProject: (id: string) => void;
-  addJournal: (journal: Omit<JournalEntry, 'id' | 'slug'>) => void;
-  updateJournal: (id: string, journal: Partial<JournalEntry>) => void;
-  deleteJournal: (id: string) => void;
-  updateStat: (id: string, stat: Partial<StatItem>) => void;
-  updateAllStats: (stats: StatItem[]) => void;
-  updateResume: (fileData: { url: string; fileName: string }) => void;
+  updateConfig: (config: Partial<PortfolioConfig>) => Promise<void>;
+  addProject: (project: Omit<Project, 'id'>) => Promise<void>;
+  updateProject: (id: string, project: Partial<Project>) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
+  addJournal: (journal: Omit<JournalEntry, 'id' | 'slug'>) => Promise<void>;
+  updateJournal: (id: string, journal: Partial<JournalEntry>) => Promise<void>;
+  deleteJournal: (id: string) => Promise<void>;
+  updateStat: (id: string, stat: Partial<StatItem>) => Promise<void>;
+  updateAllStats: (stats: StatItem[]) => Promise<void>;
+  updateResume: (fileData: { url: string; fileName: string }) => Promise<void>;
   downloadResume: () => void;
-  resetToDefaults: () => void;
+  resetToDefaults: () => Promise<void>;
   isAdminAuthenticated: boolean;
   setIsAdminAuthenticated: (auth: boolean) => void;
+  isCloudSynced: boolean;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
@@ -71,6 +81,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   });
 
+  const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
+
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     try {
       return sessionStorage.getItem(STORAGE_KEYS.AUTH) === 'true';
@@ -79,63 +91,172 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   });
 
-  // Sync to local storage
+  // Real-time Firestore Listeners & Initial Seeding
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(config));
-    } catch (e) {
-      console.warn('LocalStorage config save error:', e);
-    }
-  }, [config]);
+    let unsubscribeConfig: (() => void) | undefined;
+    let unsubscribeProjects: (() => void) | undefined;
+    let unsubscribeJournals: (() => void) | undefined;
+    let unsubscribeStats: (() => void) | undefined;
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(projects));
-    } catch (e) {
-      console.warn('LocalStorage projects save error:', e);
-    }
-  }, [projects]);
+    const setupFirestoreSync = async () => {
+      try {
+        // 1. Config collection / main document
+        const configDocRef = doc(db, 'config', 'main');
+        unsubscribeConfig = onSnapshot(
+          configDocRef,
+          async (snapshot) => {
+            if (snapshot.exists()) {
+              const data = snapshot.data() as PortfolioConfig;
+              setConfig(data);
+              localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(data));
+            } else {
+              // Seed initial config to firestore
+              try {
+                await setDoc(configDocRef, INITIAL_CONFIG);
+              } catch (seedErr) {
+                console.warn('Initial config seed error:', seedErr);
+              }
+            }
+          },
+          (err) => console.warn('Config snapshot error:', err)
+        );
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.JOURNALS, JSON.stringify(journals));
-    } catch (e) {
-      console.warn('LocalStorage journals save error:', e);
-    }
-  }, [journals]);
+        // 2. Projects collection
+        const projectsCollRef = collection(db, 'projects');
+        unsubscribeProjects = onSnapshot(
+          projectsCollRef,
+          async (snapshot) => {
+            if (!snapshot.empty) {
+              const docs = snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as Project));
+              setProjects(docs);
+              localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(docs));
+            } else {
+              // Seed initial projects
+              for (const p of INITIAL_PROJECTS) {
+                try {
+                  await setDoc(doc(db, 'projects', p.id), p);
+                } catch (pErr) {
+                  console.warn('Initial project seed error:', pErr);
+                }
+              }
+            }
+          },
+          (err) => console.warn('Projects snapshot error:', err)
+        );
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(stats));
-    } catch (e) {
-      console.warn('LocalStorage stats save error:', e);
-    }
-  }, [stats]);
+        // 3. Journals collection
+        const journalsCollRef = collection(db, 'journals');
+        unsubscribeJournals = onSnapshot(
+          journalsCollRef,
+          async (snapshot) => {
+            if (!snapshot.empty) {
+              const docs = snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as JournalEntry));
+              setJournals(docs);
+              localStorage.setItem(STORAGE_KEYS.JOURNALS, JSON.stringify(docs));
+            } else {
+              // Seed initial journals
+              for (const j of INITIAL_JOURNALS) {
+                try {
+                  await setDoc(doc(db, 'journals', j.id), j);
+                } catch (jErr) {
+                  console.warn('Initial journal seed error:', jErr);
+                }
+              }
+            }
+          },
+          (err) => console.warn('Journals snapshot error:', err)
+        );
+
+        // 4. Stats collection
+        const statsCollRef = collection(db, 'stats');
+        unsubscribeStats = onSnapshot(
+          statsCollRef,
+          async (snapshot) => {
+            if (!snapshot.empty) {
+              const docs = snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as StatItem));
+              setStats(docs);
+              localStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(docs));
+            } else {
+              // Seed initial stats
+              for (const s of INITIAL_STATS) {
+                try {
+                  await setDoc(doc(db, 'stats', s.id), s);
+                } catch (sErr) {
+                  console.warn('Initial stat seed error:', sErr);
+                }
+              }
+            }
+            setIsCloudSynced(true);
+          },
+          (err) => console.warn('Stats snapshot error:', err)
+        );
+      } catch (err) {
+        console.error('Error connecting to Firestore, using local fallback:', err);
+      }
+    };
+
+    setupFirestoreSync();
+
+    return () => {
+      if (unsubscribeConfig) unsubscribeConfig();
+      if (unsubscribeProjects) unsubscribeProjects();
+      if (unsubscribeJournals) unsubscribeJournals();
+      if (unsubscribeStats) unsubscribeStats();
+    };
+  }, []);
 
   // Update Config
-  const updateConfig = (newConfig: Partial<PortfolioConfig>) => {
-    setConfig((prev) => ({ ...prev, ...newConfig }));
+  const updateConfig = async (newConfig: Partial<PortfolioConfig>) => {
+    const updated = { ...config, ...newConfig };
+    setConfig(updated);
+    localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'config', 'main'), updated, { merge: true });
+    } catch (e) {
+      console.warn('Firestore updateConfig error:', e);
+    }
   };
 
   // Add Project
-  const addProject = (projectData: Omit<Project, 'id'>) => {
+  const addProject = async (projectData: Omit<Project, 'id'>) => {
     const id = projectData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now();
     const newProject: Project = { ...projectData, id };
-    setProjects((prev) => [newProject, ...prev]);
+    const updated = [newProject, ...projects];
+    setProjects(updated);
+    localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'projects', id), newProject);
+    } catch (e) {
+      console.warn('Firestore addProject error:', e);
+    }
   };
 
   // Update Project
-  const updateProject = (id: string, updatedData: Partial<Project>) => {
-    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...updatedData } : p)));
+  const updateProject = async (id: string, updatedData: Partial<Project>) => {
+    const updated = projects.map((p) => (p.id === id ? { ...p, ...updatedData } : p));
+    setProjects(updated);
+    localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'projects', id), updatedData, { merge: true });
+    } catch (e) {
+      console.warn('Firestore updateProject error:', e);
+    }
   };
 
   // Delete Project
-  const deleteProject = (id: string) => {
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+  const deleteProject = async (id: string) => {
+    const updated = projects.filter((p) => p.id !== id);
+    setProjects(updated);
+    localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updated));
+    try {
+      await deleteDoc(doc(db, 'projects', id));
+    } catch (e) {
+      console.warn('Firestore deleteProject error:', e);
+    }
   };
 
   // Add Journal
-  const addJournal = (journalData: Omit<JournalEntry, 'id' | 'slug'>) => {
+  const addJournal = async (journalData: Omit<JournalEntry, 'id' | 'slug'>) => {
     const slug = journalData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const id = String(Date.now());
     const newJournal: JournalEntry = {
@@ -143,36 +264,79 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       id,
       slug: `${slug}-${Date.now().toString().slice(-4)}`,
     };
-    setJournals((prev) => [newJournal, ...prev]);
+    const updated = [newJournal, ...journals];
+    setJournals(updated);
+    localStorage.setItem(STORAGE_KEYS.JOURNALS, JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'journals', id), newJournal);
+    } catch (e) {
+      console.warn('Firestore addJournal error:', e);
+    }
   };
 
   // Update Journal
-  const updateJournal = (id: string, updatedData: Partial<JournalEntry>) => {
-    setJournals((prev) => prev.map((j) => (j.id === id ? { ...j, ...updatedData } : j)));
+  const updateJournal = async (id: string, updatedData: Partial<JournalEntry>) => {
+    const updated = journals.map((j) => (j.id === id ? { ...j, ...updatedData } : j));
+    setJournals(updated);
+    localStorage.setItem(STORAGE_KEYS.JOURNALS, JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'journals', id), updatedData, { merge: true });
+    } catch (e) {
+      console.warn('Firestore updateJournal error:', e);
+    }
   };
 
   // Delete Journal
-  const deleteJournal = (id: string) => {
-    setJournals((prev) => prev.filter((j) => j.id !== id));
+  const deleteJournal = async (id: string) => {
+    const updated = journals.filter((j) => j.id !== id);
+    setJournals(updated);
+    localStorage.setItem(STORAGE_KEYS.JOURNALS, JSON.stringify(updated));
+    try {
+      await deleteDoc(doc(db, 'journals', id));
+    } catch (e) {
+      console.warn('Firestore deleteJournal error:', e);
+    }
   };
 
   // Update Stat
-  const updateStat = (id: string, updatedData: Partial<StatItem>) => {
-    setStats((prev) => prev.map((s) => (s.id === id ? { ...s, ...updatedData } : s)));
+  const updateStat = async (id: string, updatedData: Partial<StatItem>) => {
+    const updated = stats.map((s) => (s.id === id ? { ...s, ...updatedData } : s));
+    setStats(updated);
+    localStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'stats', id), updatedData, { merge: true });
+    } catch (e) {
+      console.warn('Firestore updateStat error:', e);
+    }
   };
 
   // Update All Stats
-  const updateAllStats = (newStats: StatItem[]) => {
+  const updateAllStats = async (newStats: StatItem[]) => {
     setStats(newStats);
+    localStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(newStats));
+    try {
+      for (const s of newStats) {
+        await setDoc(doc(db, 'stats', s.id), s, { merge: true });
+      }
+    } catch (e) {
+      console.warn('Firestore updateAllStats error:', e);
+    }
   };
 
   // Update Resume in Config
-  const updateResume = (fileData: { url: string; fileName: string }) => {
-    setConfig((prev) => ({
-      ...prev,
+  const updateResume = async (fileData: { url: string; fileName: string }) => {
+    const updated = {
+      ...config,
       resumeUrl: fileData.url,
       resumeFileName: fileData.fileName,
-    }));
+    };
+    setConfig(updated);
+    localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'config', 'main'), updated, { merge: true });
+    } catch (e) {
+      console.warn('Firestore updateResume error:', e);
+    }
   };
 
   const downloadResume = () => {
@@ -246,7 +410,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
-  const resetToDefaults = () => {
+  const resetToDefaults = async () => {
     setConfig(INITIAL_CONFIG);
     setProjects(INITIAL_PROJECTS);
     setJournals(INITIAL_JOURNALS);
@@ -255,6 +419,40 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     localStorage.removeItem(STORAGE_KEYS.PROJECTS);
     localStorage.removeItem(STORAGE_KEYS.JOURNALS);
     localStorage.removeItem(STORAGE_KEYS.STATS);
+
+    try {
+      // Overwrite Firestore records with initial data
+      await setDoc(doc(db, 'config', 'main'), INITIAL_CONFIG);
+
+      // Clean and reset projects
+      const existingProjects = await getDocs(collection(db, 'projects'));
+      for (const d of existingProjects.docs) {
+        await deleteDoc(d.ref);
+      }
+      for (const p of INITIAL_PROJECTS) {
+        await setDoc(doc(db, 'projects', p.id), p);
+      }
+
+      // Clean and reset journals
+      const existingJournals = await getDocs(collection(db, 'journals'));
+      for (const d of existingJournals.docs) {
+        await deleteDoc(d.ref);
+      }
+      for (const j of INITIAL_JOURNALS) {
+        await setDoc(doc(db, 'journals', j.id), j);
+      }
+
+      // Clean and reset stats
+      const existingStats = await getDocs(collection(db, 'stats'));
+      for (const d of existingStats.docs) {
+        await deleteDoc(d.ref);
+      }
+      for (const s of INITIAL_STATS) {
+        await setDoc(doc(db, 'stats', s.id), s);
+      }
+    } catch (e) {
+      console.warn('Firestore resetToDefaults error:', e);
+    }
   };
 
   return (
@@ -277,6 +475,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         downloadResume,
         resetToDefaults,
         isAdminAuthenticated,
+        isCloudSynced,
         setIsAdminAuthenticated: (auth) => {
           setIsAdminAuthenticated(auth);
           sessionStorage.setItem(STORAGE_KEYS.AUTH, auth ? 'true' : 'false');
@@ -295,3 +494,4 @@ export const usePortfolio = () => {
   }
   return context;
 };
+

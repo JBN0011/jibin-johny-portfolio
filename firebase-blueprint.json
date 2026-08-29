@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "projects": {
+      "title": "Projects",
+      "description": "Portfolio featured and gallery projects",
+      "fields": {
+        "title": { "type": "string", "description": "Title of the project" },
+        "description": { "type": "string", "description": "Short description" },
+        "category": { "type": "string", "description": "Project category" },
+        "tags": { "type": "array", "description": "List of technology tags" },
+        "image": { "type": "string", "description": "Image URL or asset path" },
+        "link": { "type": "string", "description": "Live preview link" },
+        "github": { "type": "string", "description": "GitHub repository URL" },
+        "featured": { "type": "boolean", "description": "Whether featured on homepage" }
+      }
+    },
+    "journals": {
+      "title": "Journals",
+      "description": "Technical essays and engineering notes",
+      "fields": {
+        "title": { "type": "string", "description": "Title of the article" },
+        "excerpt": { "type": "string", "description": "Summary excerpt" },
+        "date": { "type": "string", "description": "Publish date" },
+        "readTime": { "type": "string", "description": "Read time duration" },
+        "tags": { "type": "array", "description": "List of tags" },
+        "slug": { "type": "string", "description": "URL slug" },
+        "content": { "type": "string", "description": "Markdown body content" }
+      }
+    },
+    "stats": {
+      "title": "Stats",
+      "description": "Proof metrics and counters",
+      "fields": {
+        "value": { "type": "number", "description": "Metric numeric value" },
+        "suffix": { "type": "string", "description": "Suffix like + or %" },
+        "label": { "type": "string", "description": "Metric label" },
+        "desc": { "type": "string", "description": "Detailed description" }
+      }
+    },
+    "config": {
+      "title": "Site Configuration",
+      "description": "Global portfolio configuration and profile metadata",
+      "fields": {
+        "name": { "type": "string", "description": "Developer name" },
+        "bio": { "type": "string", "description": "Hero bio" },
+        "email": { "type": "string", "description": "Contact email" }
+      }
+    },
+    "messages": {
+      "title": "Contact Messages",
+      "description": "Inquiries submitted via the portfolio contact form",
+      "fields": {
+        "name": { "type": "string", "description": "Sender name" },
+        "email": { "type": "string", "description": "Sender email" },
+        "message": { "type": "string", "description": "Message content" },
+        "createdAt": { "type": "string", "description": "Timestamp" }
+      }
+    }
+  }
+}
